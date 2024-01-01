@@ -420,15 +420,16 @@ const TokiSettings_1 = require("./TokiSettings");
 const TokiParser_1 = require("./TokiParser");
 const GeneralHelper_1 = require("./GeneralHelper");
 exports.DEFAULT_URL = "https://manatoki.net";
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.124 Safari/537.36 Edg/102.0.1245.44';
 exports.ManaTokiInfo = {
-    name: "ManaToki (마나토끼)",
+    name: "ManaToki (마나토끼) (Forked from Nouun's Repo)",
     icon: "icon.png",
     websiteBaseURL: exports.DEFAULT_URL,
-    version: "0.1.0",
+    version: "0.1",
     description: "Extension that scrapes webtoons from 마나토끼.",
-    author: "Nouun",
+    author: "Ganial",
     authorWebsite: "https://github.com/nouun/",
-    contentRating: paperback_extensions_common_1.ContentRating.ADULT,
+    contentRating: paperback_extensions_common_1.ContentRating.EVERYONE,
     language: paperback_extensions_common_1.LanguageCode.KOREAN,
     sourceTags: [
         {
@@ -443,8 +444,29 @@ class ManaToki extends paperback_extensions_common_1.Source {
         this.URL = exports.DEFAULT_URL;
         this.requestManager = createRequestManager({
             requestsPerSecond: 0.5,
-            requestTimeout: 10000,
-            interceptor: new NewTokiInterceptor(() => this.requestManager),
+            requestTimeout: 15000,
+            // interceptor: new NewTokiInterceptor(() => this.requestManager),
+            interceptor: {
+                interceptRequest: async (req) => {
+                    req.headers = {
+                        ...req.headers,
+                        "referer": exports.DEFAULT_URL,
+                        "user-agent": USER_AGENT
+                    };
+                    return req;
+                },
+                interceptResponse: async (res) => {
+                    // FIXME: Test in 0.7
+                    // If .jpg returns 404, try .jpeg.
+                    const url = res.request.url;
+                    if (url.endsWith("jpg") && res.status == 404) {
+                        const req = res.request;
+                        req.url = url.slice(0, -3) + "jpeg";
+                        res = await this.requestManager.schedule(req, 2);
+                    }
+                    return res;
+                }
+            }
         });
         this.stateManager = createSourceStateManager({});
         this.updateDomain = async () => this.URL = (await (0, TokiSettings_1.getStateData)(this.stateManager)).domain;
@@ -637,27 +659,48 @@ class ManaToki extends paperback_extensions_common_1.Source {
             metadata: mData
         });
     }
+    CloudFlareError(status) {
+        if (status == 503 || status == 403) {
+            throw new Error(`CLOUDFLARE BYPASS ERROR:\nPlease go to the homepage of <${exports.DEFAULT_URL}> and press the cloud icon.`);
+        }
+    }
+    async getCloudflareBypassRequestAsync() {
+        return createRequestObject({
+            url: (await this.getBaseURL())
+                .build(),
+            method: 'GET',
+            headers: {
+                'referer': exports.DEFAULT_URL,
+                'user-agent': USER_AGENT
+            }
+        });
+    }
 }
 exports.ManaToki = ManaToki;
-class NewTokiInterceptor {
-    constructor(requestManager) {
-        this.requestManager = requestManager;
-    }
-    async interceptRequest(req) {
-        return req;
-    }
-    async interceptResponse(res) {
-        // FIXME: Test in 0.7
-        // If .jpg returns 404, try .jpeg.
-        const url = res.request.url;
-        if (url.endsWith("jpg") && res.status == 404) {
-            const req = res.request;
-            req.url = url.slice(0, -3) + "jpeg";
-            res = await this.requestManager().schedule(req, 2);
-        }
-        return res;
-    }
-}
+// class NewTokiInterceptor implements RequestInterceptor {
+//   constructor(
+//     private requestManager: () => RequestManager,
+//   ) { }
+//   async interceptRequest(req: Request): Promise<Request> {
+//     req.headers = {
+//       ...req.headers,
+//       "referer": DEFAULT_URL,
+//       "user-agent": await this.requestManager().
+//     };
+//     return req;
+//   }
+//   async interceptResponse(res: Response): Promise<Response> {
+//     // FIXME: Test in 0.7
+//     // If .jpg returns 404, try .jpeg.
+//     const url = res.request.url;
+//     if (url.endsWith("jpg") && res.status == 404) {
+//       const req = res.request;
+//       req.url = url.slice(0, -3) + "jpeg";
+//       res = await this.requestManager().schedule(req, 2);
+//     }
+//     return res;
+//   }
+// }
 
 },{"./GeneralHelper":48,"./TokiParser":50,"./TokiSettings":51,"paperback-extensions-common":4}],50:[function(require,module,exports){
 "use strict";
